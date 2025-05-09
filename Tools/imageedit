@@ -1,0 +1,83 @@
+import logging
+from PIL import Image, ImageDraw, ImageFont
+import io
+import numpy as np
+from typing import Dict, Union
+
+# Set up logging for error tracking
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class ImageEditingEngine:
+    def __init__(self):
+        self.font = ImageFont.load_default()  # Use default font (replace with truetype font in production)
+
+    def validate_image(self, image: bytes) -> bool:
+        """Validates image input."""
+        try:
+            img = Image.open(io.BytesIO(image))
+            if img.size[0] > 5000 or img.size[1] > 5000:
+                logging.error("Image dimensions too large")
+                raise ValueError("Image dimensions exceed maximum (5000x5000)")
+            return True
+        except Exception as e:
+            logging.error(f"Invalid image: {str(e)}")
+            raise ValueError(f"Invalid image: {str(e)}")
+
+    def validate_params(self, params: Dict, task: str) -> bool:
+        """Validates editing parameters."""
+        if task == "crop" and "box" not in params:
+            logging.error("Missing crop box")
+            raise ValueError("Crop task requires box parameter")
+        if task == "annotate" and "text" not in params:
+            logging.error("Missing annotation text")
+            raise ValueError("Annotate task requires text parameter")
+        return True
+
+    def edit_image(self, image: bytes, task: str, params: Dict = None) -> Dict[str, Union[bytes, str, bool]]:
+        """Edits an image based on task and parameters."""
+        try:
+            self.validate_image(image)
+            params = params or {}
+            self.validate_params(params, task)
+            img = Image.open(io.BytesIO(image)).convert("RGB")
+
+            if task == "crop":
+                box = params["box"]  # (left, upper, right, lower)
+                img = img.crop(box)
+
+            elif task == "annotate":
+                draw = ImageDraw.Draw(img)
+                text = params["text"]
+                position = params.get("position", (10, 10))
+                color = params.get("color", "red")
+                draw.text(position, text, fill=color, font=self.font)
+
+            elif task == "resize":
+                size = params.get("size", (100, 100))
+                img = img.resize(size)
+
+            else:
+                raise ValueError(f"Unsupported task: {task}")
+
+            # Convert to bytes
+            buffer = io.BytesIO()
+            img.save(buffer, format="PNG")
+            image_bytes = buffer.getvalue()
+            
+            return {"success": True, "result": image_bytes, "type": "image"}
+
+        except Exception as e:
+            logging.error(f"Image editing error: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+# Example usage
+if __name__ == "__main__":
+    engine = ImageEditingEngine()
+    with open("sample_image.jpg", "rb") as f:
+        image_data = f.read()
+    params = {"text": "Artifact #1", "position": (50, 50), "color": "blue"}
+    result = engine.edit_image(image_data, task="annotate", params=params)
+    if result["success"]:
+        with open("edited_image.png", "wb") as f:
+            f.write(result["result"])
+    print(f"Editing result: {result['type']} edited")

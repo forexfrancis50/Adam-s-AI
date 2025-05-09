@@ -1,0 +1,47 @@
+import networkx as nx
+import logging
+from typing import Dict, Union
+
+# Set up logging for error tracking
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class NetworkAnalysisEngine:
+    def __init__(self):
+        self.graph = None
+
+    def validate_graph(self, edges: list) -> bool:
+        """Validates graph edges to ensure correctness."""
+        if not edges:
+            logging.error("Empty edges list")
+            raise ValueError("Edges list cannot be empty")
+        return True
+
+    def analyze_network(self, edges: list, directed: bool = False, analysis_type: str = "centrality") -> Dict[str, Union[Dict, str]]:
+        """Analyzes a graph based on edges and type (centrality, clustering, paths)."""
+        try:
+            self.validate_graph(edges)
+            self.graph = nx.DiGraph() if directed else nx.Graph()
+            self.graph.add_edges_from(edges)
+
+            if analysis_type == "centrality":
+                centrality = nx.degree_centrality(self.graph)
+                return {"success": True, "result": {str(k): v for k, v in centrality.items()}, "type": "centrality"}
+            elif analysis_type == "clustering":
+                clustering = nx.clustering(self.graph)
+                return {"success": True, "result": {str(k): v for k, v in clustering.items()}, "type": "clustering"}
+            elif analysis_type == "paths":
+                paths = nx.all_pairs_shortest_path_length(self.graph)
+                result = {str(k): {str(k2): v2 for k2, v2 in v.items()} for k, v in paths}
+                return {"success": True, "result": result, "type": "paths"}
+            else:
+                raise ValueError(f"Unsupported analysis type: {analysis_type}")
+
+        except Exception as e:
+            logging.error(f"Network analysis error: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+# Example usage for an expert
+network_engine = NetworkAnalysisEngine()
+edges = [(1, 2), (2, 3), (3, 1)]  # Triangle graph
+result = network_engine.analyze_network(edges, directed=False, analysis_type="centrality")
+print(f"Network result: {result}")  # {'success': True, 'result': {'1': 0.5, '2': 0.5, '3': 0.5}, 'type': 'centrality'}

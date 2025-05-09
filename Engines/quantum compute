@@ -1,0 +1,55 @@
+import logging
+from qiskit import QuantumCircuit, Aer, execute
+from qiskit.visualization import plot_circuit_layout
+import io
+from typing import Dict, Union
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class QuantumComputingEngine:
+    def __init__(self):
+        self.max_qubits = 10  # Limit circuit size
+        self.backend = Aer.get_backend("qasm_simulator")
+
+    def validate_circuit(self, qubits: int) -> bool:
+        """Validates quantum circuit parameters."""
+        if qubits > self.max_qubits:
+            logging.error("Too many qubits")
+            raise ValueError(f"Number of qubits exceeds {self.max_qubits}")
+        return True
+
+    def simulate_quantum_circuit(self, description: str) -> Dict[str, Union[bytes, str, bool]]:
+        """Simulates a quantum circuit based on description."""
+        try:
+            if "grover" in description.lower():
+                qubits = 3  # Simplified example
+                self.validate_circuit(qubits)
+                circuit = QuantumCircuit(qubits, qubits)
+                # Grover's algorithm (placeholder)
+                circuit.h(range(qubits))  # Apply Hadamard gates
+                circuit.measure_all()
+                job = execute(circuit, self.backend, shots=1024)
+                result = job.result()
+                counts = result.get_counts()
+                # Visualize circuit
+                buffer = io.BytesIO()
+                plot_circuit_layout(circuit, self.backend).savefig(buffer, format="png")
+                image_bytes = buffer.getvalue()
+                return {"success": True, "result": {"counts": counts, "circuit": image_bytes}, "type": "quantum"}
+
+            else:
+                raise ValueError(f"Unsupported quantum circuit: {description}")
+
+        except Exception as e:
+            logging.error(f"Quantum simulation error: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+# Example usage
+if __name__ == "__main__":
+    engine = QuantumComputingEngine()
+    result = engine.simulate_quantum_circuit("Run Grover’s algorithm for 3 qubits")
+    if result["success"]:
+        with open("quantum_circuit.png", "wb") as f:
+            f.write(result["result"]["circuit"])
+        print(f"Simulation result: {result['result']['counts']}")

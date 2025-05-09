@@ -1,0 +1,89 @@
+import asyncio
+import platform
+import matplotlib.pyplot as plt
+import numpy as np
+import logging
+from typing import Dict, Union
+import base64
+from io import BytesIO
+
+# Set up logging for error tracking
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class GraphingEngine:
+    def __init__(self, output_format: str = "png"):
+        self.output_format = output_format  # 'png' or 'latex' (for pgfplots)
+
+    def validate_data(self, data: Dict) -> bool:
+        """Validates plotting data to ensure correctness."""
+        if "x" not in data or "y" not in data:
+            logging.error("Data must include 'x' and 'y' arrays")
+            raise ValueError("Data must include 'x' and 'y' arrays")
+        if len(data["x"]) != len(data["y"]):
+            logging.error("X and Y arrays must have equal length")
+            raise ValueError("X and Y arrays must have equal length")
+        return True
+
+    async def generate_plot(self, data: Dict, plot_type: str = "line", options: Dict = None) -> Dict[str, Union[str, bytes]]:
+        """Generates a plot based on data and type. Options include labels, title, etc."""
+        try:
+            self.validate_data(data)
+            options = options or {"xlabel": "X", "ylabel": "Y", "title": "Plot"}
+
+            # Create plot
+            plt.figure(figsize=(8, 6))
+            if plot_type == "line":
+                plt.plot(data["x"], data["y"], 'b-', label=options.get("label", "Data"))
+            elif plot_type == "scatter":
+                plt.scatter(data["x"], data["y"], color='b', label=options.get("label", "Data"))
+            elif plot_type == "histogram":
+                plt.hist(data["y"], bins=options.get("bins", 10), color='b', label=options.get("label", "Data"))
+            else:
+                raise ValueError(f"Unsupported plot type: {plot_type}")
+
+            plt.title(options.get("title"))
+            plt.xlabel(options.get("xlabel"))
+            plt.ylabel(options.get("ylabel"))
+            plt.grid(options.get("grid", True))
+            if "label" in options:
+                plt.legend()
+
+            if self.output_format == "png":
+                # Save to PNG
+                buffer = BytesIO()
+                plt.savefig(buffer, format="png")
+                plt.close()
+                buffer.seek(0)
+                return {"success": True, "output": base64.b64encode(buffer.getvalue()).decode(), "type": "png"}
+            elif self.output_format == "latex":
+                # Generate pgfplots code (simplified)
+                latex_code = f"""
+\\begin{{tikzpicture}}
+\\begin{{axis}}[
+    xlabel={{{options.get('xlabel')}}},
+    ylabel={{{options.get('ylabel')}}},
+    title={{{options.get('title')}}}
+]
+\\addplot coordinates {{{' '.join(f'({x},{y})' for x, y in zip(data['x'], data['y']))}}};
+\\end{{axis}}
+\\end{{tikzpicture}}
+"""
+                plt.close()
+                return {"success": True, "output": latex_code, "type": "latex"}
+            else:
+                raise ValueError(f"Unsupported output format: {self.output_format}")
+
+        except Exception as e:
+            logging.error(f"Plotting error: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+# Example usage for an expert
+graph_engine = GraphingEngine(output_format="png")
+data = {"x": np.linspace(0, 10, 100), "y": np.sin(np.linspace(0, 10, 100))}
+options = {"title": "Sine Wave", "xlabel": "X", "ylabel": "Y", "grid": True}
+
+if platform.system() == "Emscripten":
+    result = asyncio.run(graph_engine.generate_plot(data, plot_type="line", options=options))
+else:
+    result = graph_engine.generate_plot(data, plot_type="line", options=options)
+print(f"Plot result: {result['type']} generated")  # {'success': True, 'output': '...base64...', 'type': 'png'}

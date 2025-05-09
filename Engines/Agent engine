@@ -1,0 +1,81 @@
+import logging
+from mesa import Agent, Model
+from mesa.time import RandomActivation
+from mesa.space import MultiGrid
+import matplotlib.pyplot as plt
+import io
+from typing import Dict, Union
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class MultiAgentSimulationEngine:
+    def __init__(self):
+        self.max_agents = 1000
+
+    def validate_params(self, params: Dict) -> bool:
+        """Validates simulation parameters."""
+        if params.get("num_agents", 0) > self.max_agents:
+            logging.error("Too many agents")
+            raise ValueError(f"Number of agents exceeds {self.max_agents}")
+        return True
+
+    def run_simulation(self, params: Dict) -> Dict[str, Union[bytes, str, bool]]:
+        """Runs a multi-agent simulation."""
+        try:
+            self.validate_params(params)
+            num_agents = params.get("num_agents", 100)
+            steps = params.get("steps", 50)
+
+            # Simple traffic simulation
+            class TrafficAgent(Agent):
+                def __init__(self, unique_id, model):
+                    super().__init__(unique_id, model)
+                    self.speed = 1
+
+                def step(self):
+                    x, y = self.pos
+                    new_x = (x + self.speed) % self.model.grid.width
+                    self.model.grid.move_agent(self, (new_x, y))
+
+            class TrafficModel(Model):
+                def __init__(self, N, width=50, height=50):
+                    self.num_agents = N
+                    self.grid = MultiGrid(width, height, True)
+                    self.schedule = RandomActivation(self)
+                    for i in range(self.num_agents):
+                        a = TrafficAgent(i, self)
+                        self.schedule.add(a)
+                        self.grid.place_agent(a, (i % width, i // width))
+
+                def step(self):
+                    self.schedule.step()
+
+            model = TrafficModel(num_agents)
+            for _ in range(steps):
+                model.step()
+
+            # Visualize
+            fig, ax = plt.subplots()
+            for agent in model.schedule.agents:
+                x, y = agent.pos
+                ax.scatter(x, y, c="blue")
+            buffer = io.BytesIO()
+            plt.savefig(buffer, format="png")
+            plt.close()
+            image_bytes = buffer.getvalue()
+            return {"success": True, "result": image_bytes, "type": "image"}
+
+        except Exception as e:
+            logging.error(f"Simulation error: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+# Example usage
+if __name__ == "__main__":
+    engine = MultiAgentSimulationEngine()
+    params = {"num_agents": 100, "steps": 50}
+    result = engine.run_simulation(params)
+    if result["success"]:
+        with open("simulation_result.png", "wb") as f:
+            f.write(result["result"])
+    print(f"Simulation result: {result['type']}")

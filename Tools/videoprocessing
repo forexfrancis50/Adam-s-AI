@@ -1,0 +1,113 @@
+import logging
+import moviepy.editor as mp
+import cv2
+import numpy as np
+from transformers import pipeline
+from PIL import Image
+import io
+from typing import Dict, Union, List
+
+# Set up logging for error tracking
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class VideoProcessingEngine:
+    def __init__(self):
+        self.object_detector = pipeline("object-detection", model="facebook/detr-resnet-50")
+        self.max_duration = 300  # 5 minutes max
+        self.max_size = 100 * 1024 * 1024  # 100 MB max
+
+    def validate_video(self, video: bytes) -> bool:
+        """Validates video input."""
+        try:
+            if len(video) > self.max_size:
+                logging.error("Video size too large")
+                raise ValueError(f"Video size exceeds {self.max_size / (1024 * 1024)} MB")
+            temp_path = "temp_video.mp4"
+            with open(temp_path, "wb") as f:
+                f.write(video)
+            clip = mp.VideoFileClip(temp_path)
+            duration = clip.duration
+            clip.close()
+            import os
+            os.remove(temp_path)
+            if duration > self.max_duration:
+                logging.error("Video duration too long")
+                raise ValueError(f"Video duration exceeds {self.max_duration} seconds")
+            return True
+        except Exception as e:
+            logging.error(f"Invalid video: {str(e)}")
+            raise ValueError(f"Invalid video: {str(e)}")
+
+    def process_video(self, video: bytes, task: str = "key_frame_detection") -> Dict[str, Union[List, str, bool]]:
+        """Processes a video for key frame detection or object detection."""
+        try:
+            self.validate_video(video)
+            temp_path = "temp_video.mp4"
+            with open(temp_path, "wb") as f:
+                f.write(video)
+            clip = mp.VideoFileClip(temp_path)
+
+            if task == "key_frame_detection":
+                # Extract key frames using scene detection
+                cap = cv2.VideoCapture(temp_path)
+                frames = []
+                frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                fps = cap.get(cv2.CAP_PROP_FPS)
+                interval = int(fps * 2)  # Extract every 2 seconds
+                for i in range(0, frame_count, interval):
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, i)
+                    ret, frame = cap.read()
+                    if ret:
+                        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        img = Image.fromarray(frame_rgb)
+                        buffer = io.BytesIO()
+                        img.save(buffer, format="PNG")
+                        frames.append(buffer.getvalue())
+                cap.release()
+                clip.close()
+                import os
+                os.remove(temp_path)
+                return {"success": True, "result": frames, "type": "key_frames"}
+
+            elif task == "object_detection":
+                # Detect objects in key frames
+                cap = cv2.VideoCapture(temp_path)
+                results = []
+                frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                fps = cap.get(cv2.CAP_PROP_FPS)
+                interval = int(fps * 2)
+                for i in range(0, frame_count, interval):
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, i)
+                    ret, frame = cap.read()
+                    if ret:
+                        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        img = Image.fromarray(frame_rgb)
+                        detections = self.object_detector(img)
+                        results.append({"frame": i, "objects": detections})
+                cap.release()
+                clip.close()
+                import os
+                os.remove(temp_path)
+                return {"success": True, "result": results, "type": "object_detection"}
+
+            else:
+                clip.close()
+                import os
+                os.remove(temp_path)
+                raise ValueError(f"Unsupported task: {task}")
+
+        except Exception as e:
+            logging.error(f"Video processing error: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+# Example usage
+if __name__ == "__main__":
+    engine = VideoProcessingEngine()
+    with open("sample_video.mp4", "rb") as f:
+        video_data = f.read()
+    result = engine.process_video(video_data, task="key_frame_detection")
+    if result["success"]:
+        for i, frame in enumerate(result["result"]):
+            with open(f"key_frame_{i}.png", "wb") as f:
+                f.write(frame)
+    print(f"Processing result: {result['type']}")

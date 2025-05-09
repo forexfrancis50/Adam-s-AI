@@ -1,0 +1,44 @@
+import latex2mathml.converter
+import logging
+from typing import Dict, Union
+
+# Set up logging for error tracking
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class MathMLConverterEngine:
+    def __init__(self):
+        pass
+
+    def validate_input(self, expression: str) -> bool:
+        """Validates LaTeX or text expression for conversion."""
+        if not expression.strip():
+            logging.error("Empty expression")
+            raise ValueError("Expression cannot be empty")
+        return True
+
+    def convert_to_mathml(self, expression: str, input_type: str = "latex") -> Dict[str, Union[str, bool]]:
+        """Converts LaTeX or text to MathML."""
+        try:
+            self.validate_input(expression)
+
+            if input_type == "latex":
+                # Convert LaTeX to MathML
+                mathml = latex2mathml.converter.convert(expression)
+                return {"success": True, "mathml": mathml, "type": "mathml"}
+            elif input_type == "text":
+                # Simplified text-to-LaTeX conversion (e.g., x^2 to \x^2)
+                latex_expr = expression.replace("^", "**").replace(" ", "")
+                mathml = latex2mathml.converter.convert(latex_expr)
+                return {"success": True, "mathml": mathml, "type": "mathml"}
+            else:
+                raise ValueError(f"Unsupported input type: {input_type}")
+
+        except Exception as e:
+            logging.error(f"MathML conversion error: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+# Example usage for an expert
+mathml_engine = MathMLConverterEngine()
+expression = r"x^2 + 2x + 1"
+result = mathml_engine.convert_to_mathml(expression, input_type="latex")
+print(f"MathML result: {result['mathml'][:100]}...")  # Truncated MathML output

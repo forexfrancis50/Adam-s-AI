@@ -1,0 +1,71 @@
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+import logging
+from typing import Dict, Union
+
+# Set up logging for error tracking
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class TextSummarizerEngine:
+    def __init__(self, model_name: str = "facebook/bart-large-cnn"):
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+        self.max_input_length = 1024
+        self.max_summary_length = 150
+
+    def validate_input(self, text: str) -> bool:
+        """Validates input text for summarization."""
+        if not text.strip():
+            logging.error("Empty input text")
+            raise ValueError("Input text cannot be empty")
+        if len(text) > 10000:  # Arbitrary limit to prevent memory issues
+            logging.error("Input text too long")
+            raise ValueError("Input text exceeds maximum length")
+        return True
+
+    def summarize_text(self, text: str, mode: str = "abstractive", max_length: int = None) -> Dict[str, Union[str, bool]]:
+        """Summarizes text in abstractive or extractive mode."""
+        try:
+            self.validate_input(text)
+            max_length = max_length or self.max_summary_length
+
+            if mode == "abstractive":
+                # Abstractive summarization using BART
+                inputs = self.tokenizer(
+                    text,
+                    max_length=self.max_input_length,
+                    truncation=True,
+                    return_tensors="pt"
+                )
+                summary_ids = self.model.generate(
+                    **inputs,
+                    max_length=max_length,
+                    min_length=max_length // 2,
+                    length_penalty=2.0,
+                    num_beams=4,
+                    early_stopping=True
+                )
+                summary = self.tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+                return {"success": True, "summary": summary, "type": "abstractive"}
+
+            elif mode == "extractive":
+                # Simplified extractive summarization (sentence ranking)
+                from summa import summarizer  # Requires `summa` package
+                summary = summarizer.summarize(text, ratio=0.3)
+                return {"success": True, "summary": summary, "type": "extractive"}
+
+            else:
+                raise ValueError(f"Unsupported mode: {mode}")
+
+        except Exception as e:
+            logging.error(f"Summarization error: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+# Example usage for an expert
+summarizer_engine = TextSummarizerEngine()
+text = """
+Urban planning involves designing and managing city spaces to improve living conditions.
+It includes zoning, transportation, and infrastructure development. Recent trends focus
+on sustainability and smart cities, integrating technology for efficient resource use.
+"""
+result = summarizer_engine.summarize_text(text, mode="abstractive", max_length=50)
+print(f"Summary result: {result}")  # {'success': True, 'summary': 'Urban planning designs city spaces, focusing on zoning, transportation, and sustainability.', 'type': 'abstractive'}

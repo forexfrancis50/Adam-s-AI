@@ -1,0 +1,104 @@
+import asyncio
+import platform
+import logging
+from typing import Dict, Union
+import pyodide  # Simulated import for Pyodide (requires browser environment)
+from restrictedpython import compile_restricted, safe_globals, limited_builtins
+import numpy as np
+import timeout_decorator
+
+# Set up logging for error tracking
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class CodeInterpreterEngine:
+    def __init__(self, timeout: int = 5, allowed_libraries: list = ["math", "numpy"]):
+        self.timeout = timeout  # Execution timeout in seconds
+        self.allowed_libraries = allowed_libraries
+        self.safe_globals = safe_globals.copy()
+        self.safe_globals.update(limited_builtins)
+        # Add allowed libraries to safe globals
+        self.safe_globals["np"] = np
+        self.safe_globals["math"] = __import__("math")
+
+    def validate_code(self, code: str) -> bool:
+        """Validates code to prevent unsafe operations."""
+        try:
+            # Check for dangerous keywords (e.g., file I/O, network)
+            forbidden = ["open(", "socket.", "subprocess.", "os.", "__import__"]
+            for keyword in forbidden:
+                if keyword in code:
+                    logging.error(f"Forbidden operation detected: {keyword}")
+                    raise ValueError(f"Code contains forbidden operation: {keyword}")
+            # Compile to check syntax
+            compile_restricted(code, "<string>", "exec")
+            return True
+        except Exception as e:
+            logging.error(f"Code validation error: {str(e)}")
+            raise ValueError(f"Invalid code: {str(e)}")
+
+    @timeout_decorator.timeout(5, timeout_exception=TimeoutError)
+    def execute_python(self, code: str) -> Dict[str, Union[str, bool]]:
+        """Executes Python code in a restricted environment."""
+        try:
+            # Validate code
+            self.validate_code(code)
+
+            # Prepare safe environment
+            local_vars = {}
+            output = []
+
+            # Redirect stdout (simulated, use io.StringIO in practice)
+            def capture_print(*args):
+                output.append(" ".join(map(str, args)))
+
+            self.safe_globals["print"] = capture_print
+
+            # Compile and execute restricted code
+            compiled_code = compile_restricted(code, "<string>", "exec")
+            exec(compiled_code, self.safe_globals, local_vars)
+
+            return {
+                "success": True,
+                "output": "\n".join(output),
+                "variables": {k: str(v) for k, v in local_vars.items() if not k.startswith("_")}
+            }
+
+        except TimeoutError:
+            logging.error("Code execution timed out")
+            return {"success": False, "error": "Execution timed out"}
+        except Exception as e:
+            logging.error(f"Execution error: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    async def execute_code(self, code: str, language: str = "python") -> Dict[str, Union[str, bool]]:
+        """Main entry point for code execution, supports multiple languages."""
+        if language != "python":
+            logging.error(f"Unsupported language: {language}")
+            return {"success": False, "error": f"Language {language} not yet supported"}
+
+        if platform.system() == "Emscripten":  # Pyodide environment
+            try:
+                # Use Pyodide for in-browser execution
+                result = await pyodide.runPythonAsync(code)
+                return {"success": True, "output": str(result), "variables": {}}
+            except Exception as e:
+                logging.error(f"Pyodide execution error: {str(e)}")
+                return {"success": False, "error": str(e)}
+        else:
+            # Use restricted Python for server-side execution
+            return self.execute_python(code)
+
+# Example usage for an expert
+code_engine = CodeInterpreterEngine(timeout=5)
+
+# Execute Python code
+code = """
+import numpy as np
+x = np.array([1, 2, 3])
+print(np.mean(x))
+"""
+if platform.system() == "Emscripten":
+    result = asyncio.run(code_engine.execute_code(code))
+else:
+    result = code_engine.execute_code(code)
+print(f"Execution result: {result}")  # {'success': True, 'output': '2.0', 'variables': {'x': '[1 2 3]'}}

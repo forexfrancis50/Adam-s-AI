@@ -1,0 +1,134 @@
+import re
+import logging
+from typing import Union, Dict, List
+
+# Set up logging for error tracking
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class LatexFormattingEngine:
+    def __init__(self, default_font: str = "cm", language: str = "latin"):
+        self.default_font = default_font  # Default font (e.g., cm, Amiri, Noto Serif CJK SC)
+        self.language = language  # Language for font selection (e.g., latin, arabic, chinese)
+        self.preamble = self._generate_preamble()
+
+    def _generate_preamble(self) -> str:
+        """Generates a comprehensive LaTeX preamble with font and package support."""
+        preamble = r"""
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{geometry}
+\geometry{margin=1in}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{setspace}
+\onehalfspacing
+"""
+        # Add font packages based on language
+        if self.language == "arabic" or self.default_font == "Amiri":
+            preamble += r"\usepackage[utf8]{inputenc}\usepackage[arabic]{babel}\usepackage{fontspec}\setmainfont{Amiri}"
+        elif self.language == "chinese" or self.default_font == "Noto Serif CJK SC":
+            preamble += r"\usepackage[utf8]{inputenc}\usepackage{xeCJK}\setCJKmainfont{Noto Serif CJK SC}"
+        elif self.language == "hindi" or self.default_font == "Noto Serif Devanagari":
+            preamble += r"\usepackage[utf8]{inputenc}\usepackage{devanagari}\setmainfont{Noto Serif Devanagari}"
+        elif self.language == "japanese" or self.default_font == "Noto Serif CJK JP":
+            preamble += r"\usepackage[utf8]{inputenc}\usepackage{xeCJK}\setCJKmainfont{Noto Serif CJK JP}"
+        elif self.language == "korean" or self.default_font == "Noto Serif CJK KR":
+            preamble += r"\usepackage[utf8]{inputenc}\usepackage{xeCJK}\setCJKmainfont{Noto Serif CJK KR}"
+        elif self.language == "russian" or self.default_font == "noto":
+            preamble += r"\usepackage[utf8]{inputenc}\usepackage[russian]{babel}\setmainfont{Noto Serif}"
+        elif self.language == "hebrew" or self.default_font == "DejaVu Sans":
+            preamble += r"\usepackage[utf8]{inputenc}\usepackage[hebrew]{babel}\setmainfont{DejaVu Sans}"
+        else:
+            preamble += r"\usepackage{lmodern}"  # Default Latin font (Computer Modern)
+        
+        preamble += r"\begin{document}"
+        return preamble
+
+    def validate_latex(self, content: str) -> bool:
+        """Validates LaTeX content to prevent syntax errors or unsafe commands."""
+        # Prevent dangerous commands (e.g., \input, \write)
+        forbidden = [r"\\input", r"\\write", r"\\include", r"\\system"]
+        for cmd in forbidden:
+            if re.search(cmd, content):
+                logging.error(f"Forbidden LaTeX command detected: {cmd}")
+                raise ValueError(f"Forbidden LaTeX command: {cmd}")
+        # Basic syntax check (e.g., balanced braces)
+        if content.count("{") != content.count("}"):
+            logging.error("Unbalanced braces in LaTeX content")
+            raise ValueError("Unbalanced braces in LaTeX content")
+        return True
+
+    def format_latex(self, content: Union[str, Dict], mode: str = "snippet", language: str = None) -> Dict[str, str]:
+        """
+        Formats content into LaTeX. Modes: 'snippet' (standalone LaTeX code), 'document' (full document).
+        Content can be a string (raw LaTeX) or dict (structured, e.g., {'equation': 'x^2', 'text': 'Solve'}).
+        """
+        try:
+            # Update language if specified
+            if language:
+                self.language = language
+                self.preamble = self._generate_preamble()
+
+            # Process content
+            if isinstance(content, str):
+                latex_content = content
+            elif isinstance(content, dict):
+                latex_content = self._process_structured_content(content)
+            else:
+                raise ValueError("Content must be a string or dictionary")
+
+            # Validate LaTeX content
+            self.validate_latex(latex_content)
+
+            if mode == "snippet":
+                # Return raw LaTeX snippet
+                return {"latex": latex_content, "type": "snippet", "language": self.language}
+            elif mode == "document":
+                # Return full LaTeX document
+                full_document = f"{self.preamble}\n{latex_content}\n\end{document}"
+                return {"latex": full_document, "type": "document", "language": self.language}
+            else:
+                raise ValueError(f"Unsupported mode: {mode}")
+
+        except Exception as e:
+            logging.error(f"LaTeX formatting error: {str(e)}")
+            return {"error": str(e), "type": "error", "language": self.language}
+
+    def _process_structured_content(self, content: Dict) -> str:
+        """Processes structured content into LaTeX (e.g., equations, text, tables)."""
+        latex = ""
+        if "equation" in content:
+            latex += f"\\begin{{equation}}\n{content['equation']}\n\\end{{equation}}\n"
+        if "text" in content:
+            latex += f"{content['text']}\n"
+        if "table" in content and isinstance(content["table"], list):
+            latex += "\\begin{tabular}{" + "c" * len(content["table"][0]) + "}\n"
+            latex += " \\hline\n"
+            for row in content["table"]:
+                latex += " & ".join(map(str, row)) + " \\\\\n"
+            latex += " \\hline\n\\end{tabular}\n"
+        return latex
+
+# Example usage for an expert
+latex_engine = LatexFormattingEngine(default_font="cm", language="latin")
+
+# Format a mathematical equation
+result1 = latex_engine.format_latex(r"x^2 + 2x + 1 = 0", mode="snippet")
+print(f"Snippet result: {result1}")  # {'latex': 'x^2 + 2x + 1 = 0', 'type': 'snippet', 'language': 'latin'}
+
+# Format a structured document with equation and text
+content = {
+    "equation": r"x^2 + 2x + 1 = 0",
+    "text": "Solve the quadratic equation above."
+}
+result2 = latex_engine.format_latex(content, mode="document")
+print(f"Document result: {result2['latex'][:200]}...")  # Truncated for brevity
+
+# Format for Arabic language
+latex_engine = LatexFormattingEngine(default_font="Amiri", language="arabic")
+result3 = latex_engine.format_latex(r"\int x^2 \, dx", mode="snippet")
+print(f"Arabic snippet result: {result3}")  # {'latex': '\int x^2 \, dx', 'type': 'snippet', 'language': 'arabic'}

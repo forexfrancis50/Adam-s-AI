@@ -1,0 +1,65 @@
+import logging
+import paho.mqtt.client as mqtt
+import pandas as pd
+import io
+import json
+from typing import Dict, Union
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class IoTDataEngine:
+    def __init__(self, broker: str = "localhost", port: int = 1883):
+        self.client = mqtt.Client()
+        self.client.on_message = self.on_message
+        self.client.connect(broker, port)
+        self.data = []
+        self.max_data_points = 1000
+
+    def on_message(self, client, userdata, message):
+        """Handles incoming IoT messages."""
+        try:
+            payload = json.loads(message.payload.decode())
+            self.data.append(payload)
+            if len(self.data) > self.max_data_points:
+                self.data.pop(0)
+        except Exception as e:
+            logging.error(f"IoT message error: {str(e)}")
+
+    def process_iot_data(self, topic: str, task: str, duration: int = 10) -> Dict[str, Union[str, bool]]:
+        """Processes real-time IoT data."""
+        try:
+            self.client.subscribe(topic)
+            self.client.loop_start()
+            import time
+            time.sleep(duration)  # Collect data for specified duration
+            self.client.loop_stop()
+            self.client.unsubscribe(topic)
+
+            if not self.data:
+                raise ValueError("No data collected")
+
+            df = pd.DataFrame(self.data)
+            if task == "summary":
+                result = df.describe().to_json()
+                self.data = []  # Clear data
+                return {"success": True, "result": result, "type": "json"}
+
+            elif task == "alert":
+                threshold = 30.0  # Example: temperature threshold
+                alerts = df[df["temperature"] > threshold]["temperature"].to_json()
+                self.data = []
+                return {"success": True, "result": alerts, "type": "json"}
+
+            else:
+                raise ValueError(f"Unsupported task: {task}")
+
+        except Exception as e:
+            logging.error(f"IoT processing error: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+# Example usage
+if __name__ == "__main__":
+    engine = IoTDataEngine()
+    result = engine.process_iot_data(topic="sensors/temperature", task="summary", duration=5)
+    print(f"Processing result: {result}")

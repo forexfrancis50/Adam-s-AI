@@ -1,0 +1,63 @@
+import logging
+from transformers import pipeline, AutoImageProcessor, AutoModelForObjectDetection
+from PIL import Image
+import pytesseract
+import numpy as np
+from typing import Dict, Union
+import io
+
+# Set up logging for error tracking
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class ImageProcessingEngine:
+    def __init__(self):
+        self.object_detector = pipeline("object-detection", model="facebook/detr-resnet-50")
+        self.ocr_processor = pipeline("image-to-text", model="microsoft/trocr-base-handwritten")
+
+    def validate_image(self, image: bytes) -> bool:
+        """Validates image input."""
+        try:
+            img = Image.open(io.BytesIO(image))
+            if img.size[0] > 5000 or img.size[1] > 5000:
+                logging.error("Image dimensions too large")
+                raise ValueError("Image dimensions exceed maximum (5000x5000)")
+            return True
+        except Exception as e:
+            logging.error(f"Invalid image: {str(e)}")
+            raise ValueError(f"Invalid image: {str(e)}")
+
+    def process_image(self, image: bytes, task: str = "object_detection") -> Dict[str, Union[list, str, bool]]:
+        """Processes an image for object detection, OCR, or feature extraction."""
+        try:
+            self.validate_image(image)
+            img = Image.open(io.BytesIO(image)).convert("RGB")
+
+            if task == "object_detection":
+                results = self.object_detector(img)
+                objects = [{"label": res["label"], "score": res["score"], "box": res["box"]} for res in results]
+                return {"success": True, "result": objects, "type": "object_detection"}
+
+            elif task == "ocr":
+                text = self.ocr_processor(img)[0]["generated_text"]
+                return {"success": True, "result": text, "type": "ocr"}
+
+            elif task == "feature_extraction":
+                # Simple color histogram
+                img_array = np.array(img)
+                histogram = np.histogram(img_array, bins=256)[0].tolist()
+                return {"success": True, "result": histogram, "type": "feature_extraction"}
+
+            else:
+                raise ValueError(f"Unsupported task: {task}")
+
+        except Exception as e:
+            logging.error(f"Image processing error: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+# Example usage
+if __name__ == "__main__":
+    engine = ImageProcessingEngine()
+    with open("sample_image.jpg", "rb") as f:
+        image_data = f.read()
+    result = engine.process_image(image_data, task="object_detection")
+    print(f"Processing result: {result}")

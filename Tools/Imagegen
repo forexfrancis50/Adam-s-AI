@@ -1,0 +1,58 @@
+import logging
+from diffusers import StableDiffusionPipeline
+import torch
+from typing import Dict, Union
+import io
+from PIL import Image
+
+# Set up logging for error tracking
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class ImageGenerationEngine:
+    def __init__(self, model_name: str = "stabilityai/stable-diffusion-2-1"):
+        self.pipe = StableDiffusionPipeline.from_pretrained(model_name, torch_dtype=torch.float16)
+        self.pipe = self.pipe.to("cuda" if torch.cuda.is_available() else "cpu")
+        self.pipe.safety_filter = lambda images, **kwargs: images  # Disable NSFW filter for simplicity (enable in production)
+
+    def validate_prompt(self, prompt: str) -> bool:
+        """Validates text prompt for generation."""
+        if not prompt.strip():
+            logging.error("Empty prompt")
+            raise ValueError("Prompt cannot be empty")
+        if len(prompt) > 500:
+            logging.error("Prompt too long")
+            raise ValueError("Prompt exceeds maximum length")
+        # Add content moderation (e.g., profanity filter) in production
+        return True
+
+    def generate_image(self, prompt: str, negative_prompt: str = None, num_inference_steps: int = 50) -> Dict[str, Union[bytes, str, bool]]:
+        """Generates an image from a text prompt."""
+        try:
+            self.validate_prompt(prompt)
+            image = self.pipe(
+                prompt,
+                negative_prompt=negative_prompt,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=7.5
+            ).images[0]
+            
+            # Convert to bytes
+            buffer = io.BytesIO()
+            image.save(buffer, format="PNG")
+            image_bytes = buffer.getvalue()
+            
+            return {"success": True, "result": image_bytes, "type": "image"}
+
+        except Exception as e:
+            logging.error(f"Image generation error: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+# Example usage
+if __name__ == "__main__":
+    engine = ImageGenerationEngine()
+    prompt = "A futuristic cityscape at sunset"
+    result = engine.generate_image(prompt)
+    if result["success"]:
+        with open("generated_image.png", "wb") as f:
+            f.write(result["result"])
+    print(f"Generation result: {result['type']} generated")

@@ -1,0 +1,27 @@
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, DataCollatorForSeq2Seq
+import torch
+
+# Initialize the aggregator model
+agg_tokenizer = AutoTokenizer.from_pretrained("google/mt5-small")
+agg_model = AutoModelForSeq2SeqLM.from_pretrained("google/mt5-small")
+
+# Aggregate expert outputs
+def aggregate_outputs(expert_outputs, confidences):
+    # Combine outputs with confidence weights
+    input_text = "Combine the following expert outputs into a coherent response:\n"
+    for i, (output, conf) in enumerate(zip(expert_outputs, confidences)):
+        input_text += f"Expert {i} (confidence {conf:.2f}): {output}\n"
+    
+    inputs = agg_tokenizer(input_text, max_length=512, truncation=True, return_tensors="pt")
+    outputs = agg_model.generate(**inputs, max_length=128)
+    final_response = agg_tokenizer.decode(outputs[0], skip_special_tokens=True)
+    return final_response
+
+# Example usage
+expert_outputs = [
+    "The forecast predicts rain this afternoon.",
+    "Expect cloudy skies with a chance of showers."
+]
+confidences = [0.9, 0.7]  # Simulated confidence scores
+final_response = aggregate_outputs(expert_outputs, confidences)
+print(f"Aggregated response: {final_response}")

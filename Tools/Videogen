@@ -1,0 +1,78 @@
+import logging
+from diffusers import StableDiffusionPipeline
+import moviepy.editor as mp
+import torch
+import io
+from PIL import Image
+from typing import Dict, Union
+
+# Set up logging for error tracking
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class VideoGenerationEngine:
+    def __init__(self, model_name: str = "stabilityai/stable-diffusion-2-1"):
+        self.pipe = StableDiffusionPipeline.from_pretrained(model_name, torch_dtype=torch.float16)
+        self.pipe = self.pipe.to("cuda" if torch.cuda.is_available() else "cpu")
+        self.pipe.safety_filter = lambda images, **kwargs: images  # Disable NSFW filter (enable in production)
+        self.max_frames = 50  # Max 5 seconds at 10 fps
+
+    def validate_prompt(self, prompt: str) -> bool:
+        """Validates text prompt for generation."""
+        if not prompt.strip():
+            logging.error("Empty prompt")
+            raise ValueError("Prompt cannot be empty")
+        if len(prompt) > 500:
+            logging.error("Prompt too long")
+            raise ValueError("Prompt exceeds maximum length")
+        return True
+
+    def generate_video(self, prompt: str, num_frames: int = 10, fps: int = 10) -> Dict[str, Union[bytes, str, bool]]:
+        """Generates a video from a text prompt."""
+        try:
+            self.validate_prompt(prompt)
+            if num_frames > self.max_frames:
+                raise ValueError(f"Number of frames exceeds {self.max_frames}")
+            
+            # Generate frames
+            frames = []
+            for i in range(num_frames):
+                # Slight prompt variation for animation effect
+                frame_prompt = f"{prompt}, frame {i}"
+                image = self.pipe(
+                    frame_prompt,
+                    num_inference_steps=50,
+                    guidance_scale=7.5
+                ).images[0]
+                frames.append(image)
+            
+            # Create video
+            temp_images = []
+            for i, img in enumerate(frames):
+                img.save(f"temp_frame_{i}.png")
+                temp_images.append(f"temp_frame_{i}.png")
+            clip = mp.ImageSequenceClip(temp_images, fps=fps)
+            buffer = io.BytesIO()
+            clip.write_videofile(buffer, codec="libx264", audio=False, format="mp4")
+            video_bytes = buffer.getvalue()
+            clip.close()
+            
+            # Clean up
+            import os
+            for img_path in temp_images:
+                os.remove(img_path)
+            
+            return {"success": True, "result": video_bytes, "type": "video"}
+
+        except Exception as e:
+            logging.error(f"Video generation error: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+# Example usage
+if __name__ == "__main__":
+    engine = VideoGenerationEngine()
+    prompt = "A rotating 3D cube"
+    result = engine.generate_video(prompt, num_frames=10)
+    if result["success"]:
+        with open("generated_video.mp4", "wb") as f:
+            f.write(result["result"])
+    print(f"Generation result: {result['type']}")

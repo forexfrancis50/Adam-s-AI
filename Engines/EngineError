@@ -1,0 +1,47 @@
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer, TrainingArguments
+import torch
+
+# Initialize the error detection model
+error_tokenizer = AutoTokenizer.from_pretrained("google/mt5-small")
+error_model = AutoModelForSequenceClassification.from_pretrained("google/mt5-small", num_labels=2)  # Error or no-error
+
+# Preprocessing function for error detection training
+def preprocess_error_data(examples):
+    inputs = error_tokenizer(examples["response"], max_length=512, truncation=True, padding="max_length", return_tensors="pt")
+    inputs["labels"] = torch.tensor(examples["has_error"])  # 0 for no error, 1 for error
+    return inputs
+
+# Simulated training data (replace with actual dataset)
+train_data = [
+    {"response": "Rain is predicted on the moon.", "has_error": 1},
+    {"response": "Rain is predicted this afternoon.", "has_error": 0}
+]
+train_dataset = [preprocess_error_data(item) for item in train_data]
+
+# Train the error detector
+training_args = TrainingArguments(
+    output_dir="./results_error_engine",
+    per_device_train_batch_size=2,
+    num_train_epochs=1,
+    save_strategy="no",
+    logging_steps=50,
+)
+trainer = Trainer(
+    model=error_model,
+    args=training_args,
+    train_dataset=train_dataset,
+)
+trainer.train()
+
+# Detect errors in a response
+def detect_error(response):
+    inputs = error_tokenizer(response, max_length=512, truncation=True, padding="max_length", return_tensors="pt")
+    with torch.no_grad():
+        outputs = error_model(**inputs)
+    error_prob = torch.softmax(outputs.logits, dim=1)[0, 1].item()
+    return error_prob > 0.5  # True if error detected
+
+# Example usage
+response = "Rain is predicted on the moon."
+has_error = detect_error(response)
+print(f"Error detected: {has_error}")

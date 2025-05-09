@@ -1,0 +1,72 @@
+import logging
+import geopandas as gpd
+import rasterio
+import folium
+import io
+from typing import Dict, Union
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class GeospatialAnalysisEngine:
+    def __init__(self):
+        self.max_file_size = 100 * 1024 * 1024  # 100 MB
+
+    def validate_data(self, data: bytes, file_type: str) -> bool:
+        """Validates geospatial data input."""
+        if len(data) > self.max_file_size:
+            logging.error("Data size too large")
+            raise ValueError(f"Data size exceeds {self.max_file_size / (1024 * 1024)} MB")
+        return True
+
+    def analyze_geospatial(self, data: bytes, task: str, file_type: str = "shp") -> Dict[str, Union[bytes, str, bool]]:
+        """Analyzes geospatial data or imagery."""
+        try:
+            self.validate_data(data, file_type)
+            temp_path = f"temp_data.{file_type}"
+            with open(temp_path, "wb") as f:
+                f.write(data)
+
+            if task == "map_visualization" and file_type in ["shp", "geojson"]:
+                gdf = gpd.read_file(temp_path)
+                centroid = gdf.geometry.centroid
+                m = folium.Map(location=[centroid.y.mean(), centroid.x.mean()], zoom_start=10)
+                folium.GeoJson(gdf).add_to(m)
+                buffer = io.BytesIO()
+                m.save(buffer, close_file=False)
+                html_bytes = buffer.getvalue()
+                import os
+                os.remove(temp_path)
+                return {"success": True, "result": html_bytes, "type": "html_map"}
+
+            elif task == "ndvi" and file_type == "tif":
+                with rasterio.open(temp_path) as src:
+                    red = src.read(3)  # Assuming RGB
+                    nir = src.read(4)  # Assuming NIR band
+                    ndvi = (nir - red) / (nir + red + 1e-10)
+                    buffer = io.BytesIO()
+                    with rasterio.open(buffer, "w", driver="GTiff", height=ndvi.shape[0], width=ndvi.shape[1], count=1, dtype=ndvi.dtype) as dst:
+                        dst.write(ndvi, 1)
+                    tif_bytes = buffer.getvalue()
+                import os
+                os.remove(temp_path)
+                return {"success": True, "result": tif_bytes, "type": "raster"}
+
+            else:
+                import os
+                os.remove(temp_path)
+                raise ValueError(f"Unsupported task or file type: {task}, {file_type}")
+
+        except Exception as e:
+            logging.error(f"Geospatial analysis error: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+# Example usage
+if __name__ == "__main__":
+    engine = GeospatialAnalysisEngine()
+    with open("sample_shapefile.shp", "rb") as f:
+        result = engine.analyze_geospatial(f.read(), task="map_visualization", file_type="shp")
+    if result["success"]:
+        with open("map.html", "wb") as f:
+            f.write(result["result"])
+    print(f"Analysis result: {result['type']}")

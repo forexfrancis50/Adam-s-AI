@@ -1,0 +1,132 @@
+import logging
+import comtypes.client
+from pyautocad import Autocad, APoint
+from transformers import pipeline
+from PIL import Image
+import io
+import numpy as np
+from typing import Dict, Union, List
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class AutoCADCanvasEngine:
+    def __init__(self):
+        self.acad = Autocad(create_if_not_exists=True)
+        self.nlp = pipeline("text-classification", model="distilbert-base-uncased-finetuned-sst-2-english")
+        self.max_command_length = 500
+        self.command_history = []
+        try:
+            self.acad_app = comtypes.client.GetActiveObject("AutoCAD.Application")
+        except Exception as e:
+            logging.error(f"Failed to connect to AutoCAD: {str(e)}")
+            raise ValueError("AutoCAD must be running")
+
+    def validate_command(self, command: str) -> bool:
+        """Validates input command."""
+        if not command.strip():
+            logging.error("Empty command")
+            raise ValueError("Command cannot be empty")
+        if len(command) > self.max_command_length:
+            logging.error("Command too long")
+            raise ValueError(f"Command exceeds {self.max_command_length} characters")
+        return True
+
+    def parse_command(self, command: str) -> Dict[str, str]:
+        """Parses natural language command into AutoCAD command."""
+        # Simplified parser (extend with fine-tuned NLP model)
+        command = command.lower().strip()
+        if "draw a line" in command:
+            # Extract coordinates (e.g., "from 0,0 to 10,10")
+            parts = command.split("from")[-1].split("to")
+            start = parts[0].strip().split(",")
+            end = parts[1].strip().split(",")
+            return {
+                "command": "LINE",
+                "params": {
+                    "start": (float(start[0]), float(start[1])),
+                    "end": (float(end[0]), float(end[1]))
+                }
+            }
+        elif "draw a circle" in command:
+            # Extract center and radius (e.g., "center 5,5 radius 10")
+            parts = command.split("center")[-1].split("radius")
+            center = parts[0].strip().split(",")
+            radius = parts[1].strip()
+            return {
+                "command": "CIRCLE",
+                "params": {
+                    "center": (float(center[0]), float(center[1])),
+                    "radius": float(radius)
+                }
+            }
+        elif "undo" in command:
+            return {"command": "UNDO", "params": {}}
+        else:
+            raise ValueError(f"Unsupported command: {command}")
+
+    def execute_command(self, command: str) -> Dict[str, Union[bytes, str, bool]]:
+        """Executes an AutoCAD command and returns a snapshot."""
+        try:
+            self.validate_command(command)
+            parsed = self.parse_command(command)
+            acad_cmd = parsed["command"]
+            params = parsed["params"]
+
+            if acad_cmd == "LINE":
+                start = APoint(*params["start"])
+                end = APoint(*params["end"])
+                self.acad.model.AddLine(start, end)
+            elif acad_cmd == "CIRCLE":
+                center = APoint(*params["center"])
+                self.acad.model.AddCircle(center, params["radius"])
+            elif acad_cmd == "UNDO":
+                self.acad.doc.SendCommand("UNDO\n1\n")
+            else:
+                raise ValueError(f"Unsupported AutoCAD command: {acad_cmd}")
+
+            # Export snapshot
+            snapshot = self.capture_snapshot()
+            self.command_history.append({"command": command, "snapshot": snapshot})
+            return {"success": True, "result": snapshot, "type": "image"}
+
+        except Exception as e:
+            logging.error(f"Command execution error: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    def capture_snapshot(self) -> bytes:
+        """Captures a snapshot of the AutoCAD drawing."""
+        try:
+            self.acad.doc.SendCommand("ZOOM\nE\n")  # Zoom to extents
+            # Export to PNG (requires AutoCAD export setup)
+            temp_path = "temp_snapshot.png"
+            self.acad.doc.SendCommand(f"PNGOUT\n{temp_path}\nALL\n")
+            with open(temp_path, "rb") as f:
+                snapshot = f.read()
+            import os
+            os.remove(temp_path)
+            return snapshot
+        except Exception as e:
+            logging.error(f"Snapshot capture error: {str(e)}")
+            raise
+
+    def suggest_optimization(self) -> Dict[str, Union[str, bool]]:
+        """Suggests design optimizations (e.g., block conversion)."""
+        try:
+            # Placeholder: Analyze drawing for repetitive geometry
+            # Requires integration with AutoCAD 2025 Smart Blocks
+            return {"success": True, "result": "Consider converting repetitive geometry to blocks.", "type": "text"}
+        except Exception as e:
+            logging.error(f"Optimization suggestion error: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+# Example usage
+if __name__ == "__main__":
+    engine = AutoCADCanvasEngine()
+    result = engine.execute_command("Draw a line from 0,0 to 10,10")
+    if result["success"]:
+        with open("drawing_snapshot.png", "wb") as f:
+            f.write(result["result"])
+    print(f"Execution result: {result['type']}")
+    suggestion = engine.suggest_optimization()
+    print(f"Suggestion: {suggestion}")
