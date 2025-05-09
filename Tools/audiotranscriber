@@ -1,0 +1,57 @@
+import logging
+from speechbrain.pretrained import EncoderDecoderASR
+import torchaudio
+import io
+from typing import Dict, Union
+
+# Set up logging for error tracking
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class AudioTranscriptionEngine:
+    def __init__(self, model_name: str = "speechbrain/asr-wav2vec2-commonvoice-en"):
+        self.asr_model = EncoderDecoderASR.from_hparams(
+            source=model_name,
+            savedir=f"pretrained_models/{model_name.replace('/', '-')}"
+        )
+        self.max_duration = 300  # 5 minutes max
+
+    def validate_audio(self, audio: bytes) -> bool:
+        """Validates audio input."""
+        try:
+            waveform, sample_rate = torchaudio.load(io.BytesIO(audio))
+            if sample_rate != 16000:
+                logging.error("Unsupported sample rate")
+                raise ValueError("Audio must have 16000 Hz sample rate")
+            duration = waveform.shape[1] / sample_rate
+            if duration > self.max_duration:
+                logging.error("Audio duration too long")
+                raise ValueError(f"Audio duration exceeds {self.max_duration} seconds")
+            return True
+        except Exception as e:
+            logging.error(f"Invalid audio: {str(e)}")
+            raise ValueError(f"Invalid audio: {str(e)}")
+
+    def transcribe_audio(self, audio: bytes) -> Dict[str, Union[str, bool]]:
+        """Transcribes audio to text."""
+        try:
+            self.validate_audio(audio)
+            # Save temporarily for speechbrain (requires file path)
+            temp_path = "temp_audio.wav"
+            with open(temp_path, "wb") as f:
+                f.write(audio)
+            transcription = self.asr_model.transcribe_file(temp_path)
+            import os
+            os.remove(temp_path)  # Clean up
+            return {"success": True, "result": transcription, "type": "transcription"}
+
+        except Exception as e:
+            logging.error(f"Transcription error: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+# Example usage
+if __name__ == "__main__":
+    engine = AudioTranscriptionEngine()
+    with open("sample_audio.wav", "rb") as f:
+        audio_data = f.read()
+    result = engine.transcribe_audio(audio_data)
+    print(f"Transcription result: {result}")

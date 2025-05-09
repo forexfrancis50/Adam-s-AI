@@ -1,0 +1,76 @@
+import sqlite3
+import json
+import re
+import logging
+from typing import Union, Dict, List
+
+# Set up logging for error tracking
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class DatabaseQueryEngine:
+    def __init__(self, db_path: str = ":memory:"):
+        self.conn = sqlite3.connect(db_path)
+        self.cursor = self.conn.cursor()
+        self._initialize_default_db()
+
+    def _initialize_default_db(self):
+        """Initializes a sample database for testing (replace with domain-specific DB)."""
+        try:
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS urban_zones (
+                    zone_id INTEGER PRIMARY KEY,
+                    zone_name TEXT,
+                    population INTEGER,
+                    area REAL
+                )
+            """)
+            self.cursor.executemany(
+                "INSERT INTO urban_zones (zone_name, population, area) VALUES (?, ?, ?)",
+                [("Zone A", 10000, 5.5), ("Zone B", 15000, 7.8)]
+            )
+            self.conn.commit()
+        except sqlite3.Error as e:
+            logging.error(f"Database initialization error: {str(e)}")
+            raise
+
+    def validate_query(self, query: str) -> bool:
+        """Validates SQL query to prevent unsafe operations."""
+        query = query.lower()
+        # Allow only SELECT queries for safety
+        if not query.strip().startswith("select"):
+            logging.error("Only SELECT queries are allowed")
+            raise ValueError("Only SELECT queries are allowed")
+        # Prevent dangerous keywords
+        forbidden = ["delete ", "drop ", "insert ", "update ", ";"]
+        for keyword in forbidden:
+            if keyword in query:
+                logging.error(f"Forbidden SQL keyword detected: {keyword}")
+                raise ValueError(f"Forbidden SQL keyword: {keyword}")
+        return True
+
+    def query_database(self, query: str) -> Dict[str, Union[List, str]]:
+        """Executes an SQL query and returns results."""
+        try:
+            self.validate_query(query)
+            self.cursor.execute(query)
+            results = self.cursor.fetchall()
+            columns = [desc[0] for desc in self.cursor.description]
+            formatted_results = [dict(zip(columns, row)) for row in results]
+            return {"success": True, "results": formatted_results, "columns": columns}
+        except sqlite3.Error as e:
+            logging.error(f"SQL query error: {str(e)}")
+            return {"success": False, "error": str(e)}
+        except Exception as e:
+            logging.error(f"Unexpected error: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    def close(self):
+        """Closes the database connection."""
+        self.conn.close()
+
+# Example usage for an expert
+db_engine = DatabaseQueryEngine()  # In-memory DB for testing
+query = "SELECT zone_name, population FROM urban_zones WHERE population > 12000"
+result = db_engine.query_database(query)
+print(f"Query result: {result}")  # {'success': True, 'results': [{'zone_name': 'Zone B', 'population': 15000}], 'columns': ['zone_name', 'population']}
+db_engine.close()

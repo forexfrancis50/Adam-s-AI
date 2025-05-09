@@ -1,0 +1,47 @@
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, DataCollatorForSeq2Seq, Trainer, TrainingArguments
+
+# Initialize the query expansion model
+expand_tokenizer = AutoTokenizer.from_pretrained("google/mt5-small")
+expand_model = AutoModelForSeq2SeqLM.from_pretrained("google/mt5-small")
+
+# Preprocessing function for query expansion training
+def preprocess_expand_data(examples):
+    inputs = expand_tokenizer(examples["query"], max_length=128, truncation=True)
+    with expand_tokenizer.as_target_tokenizer():
+        labels = expand_tokenizer(examples["expanded_query"], max_length=256, truncation=True, padding="max_length")
+    inputs["labels"] = labels["input_ids"]
+    return inputs
+
+# Simulated training data (replace with actual dataset)
+train_data = [
+    {"query": "Weather tomorrow?", "expanded_query": "What is the weather forecast for tomorrow, including temperature and precipitation?"}
+]
+train_dataset = [preprocess_expand_data(item) for item in train_data]
+
+# Train the query expander
+training_args = TrainingArguments(
+    output_dir="./results_expand_engine",
+    per_device_train_batch_size=2,
+    num_train_epochs=1,
+    save_strategy="no",
+    logging_steps=50,
+)
+trainer = Trainer(
+    model=expand_model,
+    args=training_args,
+    train_dataset=train_dataset,
+    data_collator=DataCollatorForSeq2Seq(tokenizer=expand_tokenizer, model=expand_model),
+)
+trainer.train()
+
+# Expand a query
+def expand_query(query):
+    inputs = expand_tokenizer(query, max_length=128, truncation=True, return_tensors="pt")
+    outputs = expand_model.generate(**inputs, max_length=256)
+    expanded_query = expand_tokenizer.decode(outputs[0], skip_special_tokens=True)
+    return expanded_query
+
+# Example usage
+query = "Weather tomorrow?"
+expanded_query = expand_query(query)
+print(f"Expanded query: {expanded_query}")

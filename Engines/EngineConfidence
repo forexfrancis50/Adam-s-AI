@@ -1,0 +1,47 @@
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer, TrainingArguments
+import torch
+
+# Initialize the scorer model
+scorer_tokenizer = AutoTokenizer.from_pretrained("google/mt5-small")
+scorer_model = AutoModelForSequenceClassification.from_pretrained("google/mt5-small", num_labels=1)  # Regression for confidence
+
+# Preprocessing function for scorer training
+def preprocess_scorer_data(examples):
+    inputs = scorer_tokenizer(examples["response"], max_length=512, truncation=True, padding="max_length", return_tensors="pt")
+    inputs["labels"] = torch.tensor(examples["confidence"], dtype=torch.float)
+    return inputs
+
+# Simulated training data (replace with actual dataset)
+train_data = [
+    {"response": "Rain is predicted this afternoon.", "confidence": 0.9},
+    {"response": "Clouds are expected.", "confidence": 0.7}
+]
+train_dataset = [preprocess_scorer_data(item) for item in train_data]
+
+# Train the scorer
+training_args = TrainingArguments(
+    output_dir="./results_scorer_engine",
+    per_device_train_batch_size=2,
+    num_train_epochs=1,
+    save_strategy="no",
+    logging_steps=50,
+)
+trainer = Trainer(
+    model=scorer_model,
+    args=training_args,
+    train_dataset=train_dataset,
+)
+trainer.train()
+
+# Score an expert response
+def score_response(response):
+    inputs = scorer_tokenizer(response, max_length=512, truncation=True, padding="max_length", return_tensors="pt")
+    with torch.no_grad():
+        outputs = scorer_model(**inputs)
+    confidence = torch.sigmoid(outputs.logits).item()
+    return confidence
+
+# Example usage
+response = "Rain is predicted this afternoon."
+confidence = score_response(response)
+print(f"Confidence score: {confidence:.2f}")

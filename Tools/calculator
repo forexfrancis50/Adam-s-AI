@@ -1,0 +1,101 @@
+from sympy import sympify, solve, diff, integrate, Matrix, stats, Symbol, Expr, N
+from sympy.parsing.sympy_parser import parse_expr
+import re
+from typing import Union, Dict, List
+import logging
+
+# Set up logging for error tracking
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class CalculatorEngine:
+    def __init__(self, precision: int = 10):
+        self.precision = precision  # Numerical precision for floating-point results
+        self.symbols = {}  # Cache for declared symbols (e.g., x, y)
+
+    def validate_input(self, expression: str) -> bool:
+        """Validates the mathematical expression to prevent invalid or unsafe inputs."""
+        # Prevent dangerous inputs (e.g., Python code injections)
+        allowed_chars = r'^[a-zA-Z0-9\s\+\-\*\/\^\=\(\)\,\.\[\]]+$'
+        if not re.match(allowed_chars, expression):
+            logging.error(f"Invalid characters in expression: {expression}")
+            raise ValueError("Expression contains invalid characters.")
+        return True
+
+    def declare_symbols(self, symbols: List[str]) -> None:
+        """Declares symbolic variables for use in expressions."""
+        for sym in symbols:
+            self.symbols[sym] = Symbol(sym)
+
+    def calculate(self, query: str, symbols: List[str] = None, mode: str = "eval") -> Union[str, Dict]:
+        """
+        Performs mathematical computation based on the query.
+        Modes: 'eval' (evaluate expression), 'solve' (solve equation), 'diff' (differentiate),
+               'integrate' (integrate), 'stats' (statistical analysis).
+        """
+        try:
+            # Validate input
+            self.validate_input(query)
+
+            # Declare symbols if provided
+            if symbols:
+                self.declare_symbols(symbols)
+
+            # Parse expression
+            expr = parse_expr(query, local_dict=self.symbols)
+
+            if mode == "eval":
+                # Evaluate numerical or symbolic expression
+                if expr.is_number:
+                    result = N(expr, self.precision)
+                else:
+                    result = expr
+                return {"result": str(result), "type": "numerical" if expr.is_number else "symbolic"}
+
+            elif mode == "solve":
+                # Solve equation (e.g., x^2 - 4 = 0)
+                solutions = solve(expr, self.symbols.get('x', Symbol('x')))
+                return {"result": [str(sol) for sol in solutions], "type": "solutions"}
+
+            elif mode == "diff":
+                # Differentiate expression
+                x = self.symbols.get('x', Symbol('x'))
+                derivative = diff(expr, x)
+                return {"result": str(derivative), "type": "derivative"}
+
+            elif mode == "integrate":
+                # Integrate expression
+                x = self.symbols.get('x', Symbol('x'))
+                integral = integrate(expr, x)
+                return {"result": str(integral), "type": "integral"}
+
+            elif mode == "stats":
+                # Statistical analysis (e.g., mean, variance)
+                if isinstance(expr, list):
+                    mean = stats.mean(expr)
+                    variance = stats.variance(expr)
+                    return {"result": {"mean": str(mean), "variance": str(variance)}, "type": "statistics"}
+                else:
+                    raise ValueError("Stats mode requires a list of numbers.")
+
+            else:
+                raise ValueError(f"Unsupported mode: {mode}")
+
+        except Exception as e:
+            logging.error(f"Calculation error: {str(e)}")
+            return {"error": str(e), "type": "error"}
+
+# Example usage for an expert
+calc_engine = CalculatorEngine(precision=10)
+
+# Numerical evaluation
+result1 = calc_engine.calculate("2 + 2 * 3")
+print(f"Numerical result: {result1}")  # {'result': '8', 'type': 'numerical'}
+
+# Symbolic solving
+calc_engine.declare_symbols(['x'])
+result2 = calc_engine.calculate("x**2 - 4", mode="solve")
+print(f"Solve result: {result2}")  # {'result': ['-2', '2'], 'type': 'solutions'}
+
+# Integration
+result3 = calc_engine.calculate("x**2", mode="integrate")
+print(f"Integral result: {result3}")  # {'result': 'x**3/3', 'type': 'integral'}

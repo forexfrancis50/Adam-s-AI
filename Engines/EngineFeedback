@@ -1,0 +1,45 @@
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, Trainer, TrainingArguments, DataCollatorForSeq2Seq
+
+# Initialize the feedback model (same as expert model for fine-tuning)
+feedback_tokenizer = AutoTokenizer.from_pretrained("google/mt5-small")
+feedback_model = AutoModelForSeq2SeqLM.from_pretrained("google/mt5-small")
+
+# Preprocessing function for feedback data
+def preprocess_feedback_data(examples):
+    inputs = feedback_tokenizer(examples["query"], max_length=512, truncation=True)
+    with feedback_tokenizer.as_target_tokenizer():
+        labels = feedback_tokenizer(examples["desired_response"], max_length=128, truncation=True, padding="max_length")
+    inputs["labels"] = labels["input_ids"]
+    return inputs
+
+# Simulated feedback data (replace with actual user feedback)
+feedback_data = [
+    {"query": "What's the weather?", "desired_response": "Sunny with a high of 75°F.", "feedback": "positive"}
+]
+feedback_dataset = [preprocess_feedback_data(item) for item in feedback_data if item["feedback"] == "positive"]
+
+# Fine-tune the model with feedback
+training_args = TrainingArguments(
+    output_dir="./results_feedback_engine",
+    per_device_train_batch_size=2,
+    num_train_epochs=1,
+    save_strategy="no",
+    logging_steps=50,
+)
+trainer = Trainer(
+    model=feedback_model,
+    args=training_args,
+    train_dataset=feedback_dataset,
+    data_collator=DataCollatorForSeq2Seq(tokenizer=feedback_tokenizer, model=feedback_model),
+)
+trainer.train()
+
+# Update expert model with feedback
+def incorporate_feedback(expert_model, feedback_model):
+    expert_model.load_state_dict(feedback_model.state_dict())  # Update weights
+    return expert_model
+
+# Example usage
+# Assume expert_model is an existing expert
+expert_model = incorporate_feedback(expert_model, feedback_model)
+print("Expert model updated with feedback")

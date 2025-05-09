@@ -1,0 +1,52 @@
+models:
+  text_summarizer: facebook/bart-large-cnn
+  image_processing_object_detection: facebook/detr-resnet-50
+  image_generation: stabilityai/stable-diffusion-2-1
+  audio_transcription: speechbrain/asr-wav2vec2-commonvoice-en
+  audio_generation_tts: speechbrain/tts-tacotron2-ljspeech
+  audio_generation_vocoder: speechbrain/hifigan-ljspeech
+  autocad_nlp: distilbert-base-uncased
+
+engines:
+  calculator:
+    precision: 10
+  code_interpreter:
+    timeout: 5
+    allowed_libraries: ["math", "numpy"]
+  latex_formatting:
+    default_font: cm
+  database_query:
+    db_path: :memory:
+  graphing:
+    output_format: png
+  image_processing:
+    max_image_size: [5000, 5000]
+  image_generation:
+    num_inference_steps: 50
+  image_editing:
+    default_font: default
+  audio_transcription:
+    max_duration: 300
+  audio_generation:
+    max_text_length: 500
+  video_processing:
+    max_duration: 300
+  video_generation:
+    max_frames: 50
+  autocad_canvas:
+    max_command_length: 500
+  threed_modeling:
+    max_vertices: 100000
+  geospatial_analysis:
+    max_file_size: 104857600
+  tabular_data:
+    max_file_size: 52428800
+  robotics_control:
+    max_command_length: 500
+  multi_agent_simulation:
+    max_agents: 1000
+
+fine_tuning:
+  batch_size: 2
+  epochs: 1
+  learning_rate: 5e-5

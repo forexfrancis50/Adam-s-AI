@@ -1,0 +1,53 @@
+import logging
+import pandas as pd
+import io
+from sklearn.linear_model import LinearRegression
+from typing import Dict, Union
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class TabularDataEngine:
+    def __init__(self):
+        self.max_file_size = 50 * 1024 * 1024  # 50 MB
+
+    def validate_data(self, data: bytes, file_type: str) -> bool:
+        """Validates tabular data input."""
+        if len(data) > self.max_file_size:
+            logging.error("Data size too large")
+            raise ValueError(f"Data size exceeds {self.max_file_size / (1024 * 1024)} MB")
+        return True
+
+    def analyze_tabular(self, data: bytes, task: str, file_type: str = "csv") -> Dict[str, Union[str, bytes, bool]]:
+        """Analyzes tabular data."""
+        try:
+            self.validate_data(data, file_type)
+            df = pd.read_csv(io.BytesIO(data)) if file_type == "csv" else pd.read_excel(io.BytesIO(data))
+
+            if task == "summary":
+                summary = df.describe().to_json()
+                return {"success": True, "result": summary, "type": "json"}
+
+            elif task == "prediction":
+                # Simplified linear regression (extend with feature selection)
+                X = df.drop(columns=["target"]).values
+                y = df["target"].values
+                model = LinearRegression()
+                model.fit(X, y)
+                predictions = model.predict(X)
+                result = pd.DataFrame({"predictions": predictions}).to_json()
+                return {"success": True, "result": result, "type": "json"}
+
+            else:
+                raise ValueError(f"Unsupported task: {task}")
+
+        except Exception as e:
+            logging.error(f"Tabular analysis error: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+# Example usage
+if __name__ == "__main__":
+    engine = TabularDataEngine()
+    with open("sample_data.csv", "rb") as f:
+        result = engine.analyze_tabular(f.read(), task="summary", file_type="csv")
+    print(f"Analysis result: {result}")

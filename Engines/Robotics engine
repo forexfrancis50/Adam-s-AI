@@ -1,0 +1,48 @@
+import logging
+import rospy
+from std_msgs.msg import String
+from geometry_msgs.msg import Twist
+from typing import Dict, Union
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class RoboticsControlEngine:
+    def __init__(self):
+        rospy.init_node("moe_robotics", anonymous=True) if not rospy.get_node_names() else None
+        self.pub = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
+        self.max_command_length = 500
+
+    def validate_command(self, command: str) -> bool:
+        """Validates robotics command."""
+        if not command.strip():
+            logging.error("Empty command")
+            raise ValueError("Command cannot be empty")
+        if len(command) > self.max_command_length:
+            logging.error("Command too long")
+            raise ValueError(f"Command exceeds {self.max_command_length} characters")
+        return True
+
+    def control_robot(self, command: str) -> Dict[str, Union[str, bool]]:
+        """Sends control commands to a robot."""
+        try:
+            self.validate_command(command)
+            twist = Twist()
+            if "move forward" in command.lower():
+                twist.linear.x = 0.5  # Move forward at 0.5 m/s
+            elif "turn left" in command.lower():
+                twist.angular.z = 0.5  # Turn left at 0.5 rad/s
+            else:
+                raise ValueError(f"Unsupported command: {command}")
+            self.pub.publish(twist)
+            return {"success": True, "result": f"Sent command: {command}", "type": "text"}
+
+        except Exception as e:
+            logging.error(f"Robotics control error: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+# Example usage
+if __name__ == "__main__":
+    engine = RoboticsControlEngine()
+    result = engine.control_robot("Move forward")
+    print(f"Control result: {result}")

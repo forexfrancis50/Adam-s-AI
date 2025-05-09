@@ -1,0 +1,80 @@
+import logging
+from typing import Dict, Union, List
+
+# Set up logging for error tracking
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class DocumentTemplateEngine:
+    def __init__(self, latex_engine: 'LatexFormattingEngine'):
+        self.latex_engine = latex_engine  # Reuse LaTeX Formatting Engine
+        self.templates = {
+            "report": self._report_template,
+            "article": self._article_template,
+            "slides": self._slides_template
+        }
+
+    def validate_content(self, content: Dict) -> bool:
+        """Validates document content to ensure completeness."""
+        required = ["title", "sections"]
+        for key in required:
+            if key not in content:
+                logging.error(f"Missing required content: {key}")
+                raise ValueError(f"Missing required content: {key}")
+        return True
+
+    def _report_template(self, content: Dict) -> str:
+        """Generates a LaTeX report template."""
+        latex = f"\\section*{{{content['title']}}}\n"
+        for section in content["sections"]:
+            latex += f"\\subsection*{{{section['title']}}}\n{section['body']}\n"
+        if "tables" in content:
+            for table in content["tables"]:
+                latex += self.latex_engine._process_structured_content({"table": table})
+        return latex
+
+    def _article_template(self, content: Dict) -> str:
+        """Generates a LaTeX article template."""
+        latex = f"\\title{{{content['title']}}}\n\\maketitle\n"
+        for section in content["sections"]:
+            latex += f"\\section{{{section['title']}}}\n{section['body']}\n"
+        return latex
+
+    def _slides_template(self, content: Dict) -> str:
+        """Generates a LaTeX beamer slides template."""
+        latex = r"\documentclass{beamer}\usepackage[utf8]{inputenc}\begin{document}"
+        latex += f"\\title{{{content['title']}}}\n\\maketitle\n"
+        for section in content["sections"]:
+            latex += f"\\begin{{frame}}{{{section['title']}}}\n{section['body']}\n\\end{{frame}}\n"
+        latex += r"\end{document}"
+        return latex
+
+    def generate_document(self, content: Dict, template_type: str = "report") -> Dict[str, str]:
+        """Generates a document based on template and content."""
+        try:
+            self.validate_content(content)
+            if template_type not in self.templates:
+                raise ValueError(f"Unsupported template type: {template_type}")
+            
+            # Generate template content
+            template_content = self.templates[template_type](content)
+            
+            # Use LaTeX Formatting Engine for final rendering
+            return self.latex_engine.format_latex(template_content, mode="document", language=content.get("language", "latin"))
+        except Exception as e:
+            logging.error(f"Document generation error: {str(e)}")
+            return {"error": str(e), "type": "error"}
+
+# Example usage for an expert
+latex_engine = LatexFormattingEngine(default_font="cm", language="latin")
+doc_engine = DocumentTemplateEngine(latex_engine)
+content = {
+    "title": "Urban Planning Report",
+    "sections": [
+        {"title": "Introduction", "body": "This report outlines city zoning plans."},
+        {"title": "Data", "body": "Population data is presented below."}
+    ],
+    "tables": [[["Zone", "Population"], ["Zone A", 10000], ["Zone B", 15000]]],
+    "language": "latin"
+}
+result = doc_engine.generate_document(content, template_type="report")
+print(f"Document result: {result['latex'][:200]}...")  # Truncated for brevity

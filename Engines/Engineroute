@@ -1,0 +1,49 @@
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer, TrainingArguments
+import torch
+
+# Initialize the router model (lightweight classifier)
+router_tokenizer = AutoTokenizer.from_pretrained("google/mt5-small")
+router_model = AutoModelForSequenceClassification.from_pretrained("google/mt5-small", num_labels=50)  # Adjust num_labels for total experts
+
+# Simulated training data: query-to-expert mappings (replace with actual expert labels)
+train_data = [
+    {"query": "What is the weather forecast?", "expert_id": 0},  # Meteorology expert
+    {"query": "How to design a curriculum?", "expert_id": 1},  # Education expert
+    # Add more mappings for all experts
+]
+
+# Preprocessing function for router training
+def preprocess_router_data(examples):
+    inputs = router_tokenizer(examples["query"], max_length=128, truncation=True, padding="max_length", return_tensors="pt")
+    inputs["labels"] = torch.tensor(examples["expert_id"])
+    return inputs
+
+# Train the router (simulated, replace with actual dataset)
+train_dataset = train_data  # Replace with actual dataset
+train_dataset = [preprocess_router_data(item) for item in train_dataset]
+training_args = TrainingArguments(
+    output_dir="./results_router_engine",
+    per_device_train_batch_size=4,
+    num_train_epochs=1,
+    save_strategy="no",
+    logging_steps=50,
+)
+trainer = Trainer(
+    model=router_model,
+    args=training_args,
+    train_dataset=train_dataset,
+)
+trainer.train()
+
+# Route a query to the appropriate expert
+def route_query(query):
+    inputs = router_tokenizer(query, max_length=128, truncation=True, padding="max_length", return_tensors="pt")
+    with torch.no_grad():
+        outputs = router_model(**inputs)
+    expert_id = torch.argmax(outputs.logits, dim=1).item()
+    return expert_id  # Returns index of selected expert
+
+# Example usage
+query = "What is the weather forecast?"
+selected_expert = route_query(query)
+print(f"Routing query to expert {selected_expert}")

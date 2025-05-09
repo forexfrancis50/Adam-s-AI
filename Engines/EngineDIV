@@ -1,0 +1,31 @@
+from transformers import AutoTokenizer
+from sentence_transformers import SentenceTransformer, util
+
+# Initialize the diversity model (sentence embeddings)
+diversity_model = SentenceTransformer("all-MiniLM-L6-v2")
+diversity_tokenizer = AutoTokenizer.from_pretrained("google/mt5-small")
+
+# Calculate diversity scores for expert outputs
+def calculate_diversity(expert_outputs):
+    embeddings = diversity_model.encode(expert_outputs, convert_to_tensor=True)
+    similarity_matrix = util.cos_sim(embeddings, embeddings)
+    diversity_scores = 1 - similarity_matrix.mean(dim=1).cpu().numpy()  # Higher score for less similar outputs
+    return diversity_scores
+
+# Adjust aggregation weights based on diversity
+def diversify_outputs(expert_outputs, confidences):
+    diversity_scores = calculate_diversity(expert_outputs)
+    # Combine confidence and diversity (e.g., weighted sum)
+    adjusted_weights = [conf * (1 + div_score) for conf, div_score in zip(confidences, diversity_scores)]
+    total_weight = sum(adjusted_weights)
+    normalized_weights = [w / total_weight for w in adjusted_weights]
+    return normalized_weights
+
+# Example usage
+expert_outputs = [
+    "Rain is predicted this afternoon.",
+    "Expect showers later today."
+]
+confidences = [0.9, 0.7]
+weights = diversify_outputs(expert_outputs, confidences)
+print(f"Diversity-adjusted weights: {weights}")

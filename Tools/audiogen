@@ -1,0 +1,60 @@
+import logging
+from speechbrain.pretrained import Tacotron2
+from speechbrain.pretrained import HIFIGAN
+import torch
+import io
+from typing import Dict, Union
+
+# Set up logging for error tracking
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class AudioGenerationEngine:
+    def __init__(self, tts_model: str = "speechbrain/tts-tacotron2-ljspeech", vocoder_model: str = "speechbrain/hifigan-ljspeech"):
+        self.tts_model = Tacotron2.from_hparams(
+            source=tts_model,
+            savedir=f"pretrained_models/{tts_model.replace('/', '-')}"
+        )
+        self.vocoder = HIFIGAN.from_hparams(
+            source=vocoder_model,
+            savedir=f"pretrained_models/{vocoder_model.replace('/', '-')}"
+        )
+        self.max_text_length = 500
+
+    def validate_text(self, text: str) -> bool:
+        """Validates text input for generation."""
+        if not text.strip():
+            logging.error("Empty text")
+            raise ValueError("Text cannot be empty")
+        if len(text) > self.max_text_length:
+            logging.error("Text too long")
+            raise ValueError(f"Text exceeds {self.max_text_length} characters")
+        return True
+
+    def generate_audio(self, text: str) -> Dict[str, Union[bytes, str, bool]]:
+        """Generates audio from text."""
+        try:
+            self.validate_text(text)
+            # Generate mel-spectrogram
+            mel_output, _, _ = self.tts_model.encode_text(text)
+            # Convert to waveform
+            waveform = self.vocoder.decode_batch(mel_output)
+            waveform = waveform.squeeze(0).cpu().numpy()
+            # Save to bytes
+            buffer = io.BytesIO()
+            torchaudio.save(buffer, torch.tensor(waveform).unsqueeze(0), 22050, format="wav")
+            audio_bytes = buffer.getvalue()
+            return {"success": True, "result": audio_bytes, "type": "audio"}
+
+        except Exception as e:
+            logging.error(f"Audio generation error: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+# Example usage
+if __name__ == "__main__":
+    engine = AudioGenerationEngine()
+    text = "Welcome to the multimodal MoE system."
+    result = engine.generate_audio(text)
+    if result["success"]:
+        with open("generated_audio.wav", "wb") as f:
+            f.write(result["result"])
+    print(f"Generation result: {result['type']}")

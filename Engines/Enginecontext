@@ -1,0 +1,37 @@
+from transformers import AutoTokenizer
+import torch
+
+# Initialize the context tokenizer
+context_tokenizer = AutoTokenizer.from_pretrained("google/mt5-small")
+
+# Context manager
+class ContextManager:
+    def __init__(self, max_context_length=256):
+        self.context = []
+        self.max_context_length = max_context_length
+
+    def add_interaction(self, query, response):
+        self.context.append({"query": query, "response": response})
+        # Trim context if too long
+        while len(self.context) > 5:  # Keep last 5 interactions
+            self.context.pop(0)
+
+    def get_context(self):
+        context_text = "Previous interactions:\n"
+        for interaction in self.context:
+            context_text += f"Query: {interaction['query']}\nResponse: {interaction['response']}\n"
+        return context_text
+
+# Preprocess query with context
+def preprocess_with_context(query, context_manager):
+    context = context_manager.get_context()
+    full_input = f"{context}Current query: {query}"
+    inputs = context_tokenizer(full_input, max_length=512, truncation=True, return_tensors="pt")
+    return inputs
+
+# Example usage
+context_manager = ContextManager()
+context_manager.add_interaction("What's the weather today?", "Sunny with a high of 75°F.")
+query = "What about tomorrow?"
+inputs = preprocess_with_context(query, context_manager)
+print(f"Context-aware input: {context_tokenizer.decode(inputs['input_ids'][0])}")
